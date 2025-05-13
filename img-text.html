@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>OCR con Cámara</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin-top: 30px; }
+    video, canvas { width: 300px; margin-top: 10px; border: 1px solid #ccc; }
+    pre { text-align: left; max-width: 600px; margin: 20px auto; background: #eee; padding: 10px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2>Captura una tarjeta y extrae los datos</h2>
+  <video id="video" autoplay playsinline></video><br>
+  <button onclick="captureImage()">📸 Tomar Foto</button>
+  <p id="status">Esperando captura...</p>
+  <canvas id="canvas" style="display: none;"></canvas>
+  <pre id="output"></pre>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const status = document.getElementById('status');
+    const output = document.getElementById('output');
+
+    // Abrir cámara
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => video.srcObject = stream)
+      .catch(err => status.innerText = "Error al acceder a la cámara: " + err);
+
+    async function captureImage() {
+      status.innerText = "Procesando captura...";
+
+      // Dibujar imagen en canvas
+      const ctx = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Convertir canvas a blob para OCR
+      canvas.toBlob(blob => {
+        status.innerText = "Procesando OCR...";
+
+        Tesseract.recognize(
+          blob,
+          'eng',
+          {
+            logger: m => status.innerText = `OCR: ${Math.round(m.progress * 100)}%`
+          }
+        ).then(({ data: { text } }) => {
+          status.innerText = "Texto detectado:";
+          output.innerText = text;
+
+          const lines = text.toLowerCase().split('\n').map(l => l.trim()).filter(l => l.length > 2);
+
+          const email = lines.find(line => line.includes('@'));
+          const phone = lines.find(line => /\d{3,}/.test(line) && line.length < 20);
+          const name = lines.find(line => line.length > 3 && !line.includes('@') && !/\d/.test(line));
+
+          const jobKeywords = [
+            'ceo', 'founder', 'co-founder', 'president', 'manager', 'leader', 'director',
+            'affiliate', 'marketing', 'developer', 'engineer', 'executive', 'program',
+            'team', 'head', 'officer', 'consultant', 'cmo', 'cto', 'cfo', 'designer', 'sales'
+          ];
+          const jobLine = lines.find(line => jobKeywords.some(keyword => line.includes(keyword)));
+
+          output.innerText += "\n\n🔎 Datos estructurados:";
+          output.innerText += `\n👤 Nombre: ${name || 'No detectado'}`;
+          output.innerText += `\n📧 Email: ${email || 'No detectado'}`;
+          output.innerText += `\n📞 Teléfono: ${phone || 'No detectado'}`;
+          output.innerText += `\n💼 Cargo: ${jobLine || 'No detectado'}`;
+        });
+      }, 'image/jpeg');
+    }
+  </script>
+</body>
+</html>
