@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>OCR con Cámara</title>
+  <title>Escáner de Tarjetas</title>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
   <style>
     body {
@@ -60,7 +60,7 @@
   </style>
 </head>
 <body>
-  <h2>Escanea una tarjeta</h2>
+  <h2>Escanea una tarjeta de visita</h2>
   <video id="video" autoplay playsinline></video>
 
   <div class="buttons">
@@ -91,7 +91,6 @@
           facingMode: { exact: currentFacingMode },
           width: { ideal: 1280 },
           height: { ideal: 720 },
-          // Algunas cámaras aceptan esto para intentar autofocus (no garantizado)
           advanced: [{ focusMode: 'continuous' }]
         }
       };
@@ -117,6 +116,8 @@
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const base64Image = canvas.toDataURL('image/jpeg');
 
       canvas.toBlob(blob => {
         status.innerText = "Procesando OCR...";
@@ -149,11 +150,31 @@
           output.innerText += `\n📧 Email: ${email || 'No detectado'}`;
           output.innerText += `\n📞 Teléfono: ${phone || 'No detectado'}`;
           output.innerText += `\n💼 Cargo: ${jobLine || 'No detectado'}`;
+
+          // 🔁 ENVIAR A GOOGLE SHEETS
+          fetch('https://script.google.com/a/macros/getblue.io/s/AKfycbzhVpvw63x5JJ8Sv5P6LcPZR5mKlhJfGoWxH9yD4m70Xzu9qPWewoK4qUiXhE6hc9L3/exec', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: name || '',
+              email: email || '',
+              phone: phone || '',
+              job: jobLine || '',
+              imageUrl: base64Image
+            }),
+            headers: { 'Content-Type': 'application/json' }
+          }).then(res => {
+            if (res.ok) {
+              status.innerText = "✅ Datos enviados al Excel de Google Drive.";
+            } else {
+              status.innerText = "⚠️ Error al enviar datos al Excel.";
+            }
+          }).catch(() => {
+            status.innerText = "⚠️ Error de conexión con Google Sheets.";
+          });
         });
       }, 'image/jpeg');
     }
 
-    // Iniciar cámara al cargar
     startCamera();
   </script>
 </body>
