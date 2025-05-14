@@ -63,119 +63,132 @@
   <h2>Escanea una tarjeta de visita</h2>
   <video id="video" autoplay playsinline></video>
 
-  <div class="buttons">
-    <button onclick="captureImage()">📸 Tomar Foto</button>
-    <button onclick="switchCamera()">🔄 Cambiar Cámara</button>
-  </div>
+  <!-- Botón nuevo para enviar datos -->
+<div class="buttons">
+  <button onclick="captureImage()">📸 Tomar Foto</button>
+  <button onclick="switchCamera()">🔄 Cambiar Cámara</button>
+</div>
 
-  <p id="status">Esperando cámara...</p>
-  <canvas id="canvas"></canvas>
-  <pre id="output"></pre>
+<button id="sendBtn" onclick="sendToExcel()" style="display:none; margin-top:10px;">📤 Enviar datos al Excel</button>
 
-  <script>
-    let currentStream = null;
-    let currentFacingMode = 'environment'; // cámara trasera por defecto
+<p id="status">Esperando cámara...</p>
+<canvas id="canvas"></canvas>
+<pre id="output"></pre>
 
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const status = document.getElementById('status');
-    const output = document.getElementById('output');
+<script>
+  let currentStream = null;
+  let currentFacingMode = 'environment';
 
-    async function startCamera() {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
+  let extractedName = '';
+  let extractedEmail = '';
+  let extractedPhone = '';
+  let extractedJob = '';
+  let extractedImage = '';
+
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const status = document.getElementById('status');
+  const output = document.getElementById('output');
+  const sendBtn = document.getElementById('sendBtn');
+
+  async function startCamera() {
+    if (currentStream) currentStream.getTracks().forEach(track => track.stop());
+
+    const constraints = {
+      video: {
+        facingMode: { exact: currentFacingMode },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        advanced: [{ focusMode: 'continuous' }]
       }
+    };
 
-      const constraints = {
-        video: {
-          facingMode: { exact: currentFacingMode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          advanced: [{ focusMode: 'continuous' }]
-        }
-      };
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        currentStream = stream;
-        video.srcObject = stream;
-      } catch (err) {
-        status.innerText = "Error al acceder a la cámara: " + err;
-      }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      currentStream = stream;
+      video.srcObject = stream;
+    } catch (err) {
+      status.innerText = "Error al acceder a la cámara: " + err;
     }
+  }
 
-    function switchCamera() {
-      currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-      startCamera();
-    }
-
-    async function captureImage() {
-      status.innerText = "Procesando captura...";
-
-      const ctx = canvas.getContext('2d');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const base64Image = canvas.toDataURL('image/jpeg');
-
-      canvas.toBlob(blob => {
-        status.innerText = "Procesando OCR...";
-
-        Tesseract.recognize(
-          blob,
-          'eng',
-          {
-            logger: m => status.innerText = `OCR: ${Math.round(m.progress * 100)}%`
-          }
-        ).then(({ data: { text } }) => {
-          status.innerText = "Texto detectado:";
-          output.innerText = text;
-
-          const lines = text.toLowerCase().split('\n').map(l => l.trim()).filter(l => l.length > 2);
-
-          const email = lines.find(line => line.includes('@'));
-          const phone = lines.find(line => /\d{3,}/.test(line) && line.length < 20);
-          const name = lines.find(line => line.length > 3 && !line.includes('@') && !/\d/.test(line));
-
-          const jobKeywords = [
-            'ceo', 'founder', 'co-founder', 'president', 'manager', 'leader', 'director',
-            'affiliate', 'marketing', 'developer', 'engineer', 'executive', 'program',
-            'team', 'head', 'officer', 'consultant', 'cmo', 'cto', 'cfo', 'designer', 'sales'
-          ];
-          const jobLine = lines.find(line => jobKeywords.some(keyword => line.includes(keyword)));
-
-          output.innerText += "\n\n🔎 Datos estructurados:";
-          output.innerText += `\n👤 Nombre: ${name || 'No detectado'}`;
-          output.innerText += `\n📧 Email: ${email || 'No detectado'}`;
-          output.innerText += `\n📞 Teléfono: ${phone || 'No detectado'}`;
-          output.innerText += `\n💼 Cargo: ${jobLine || 'No detectado'}`;
-
-          // 🔁 ENVIAR A GOOGLE SHEETS
-          fetch('https://script.google.com/a/macros/getblue.io/s/AKfycbzhVpvw63x5JJ8Sv5P6LcPZR5mKlhJfGoWxH9yD4m70Xzu9qPWewoK4qUiXhE6hc9L3/exec', {
-            method: 'POST',
-            body: JSON.stringify({
-              name: name || '',
-              email: email || '',
-              phone: phone || '',
-              job: jobLine || '',
-              imageUrl: base64Image
-            }),
-            headers: { 'Content-Type': 'application/json' }
-          }).then(res => {
-            if (res.ok) {
-              status.innerText = "✅ Datos enviados al Excel de Google Drive.";
-            } else {
-              status.innerText = "⚠️ Error al enviar datos al Excel.";
-            }
-          }).catch(() => {
-            status.innerText = "⚠️ Error de conexión con Google Sheets.";
-          });
-        });
-      }, 'image/jpeg');
-    }
-
+  function switchCamera() {
+    currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
     startCamera();
-  </script>
+  }
+
+  async function captureImage() {
+    status.innerText = "Procesando captura...";
+
+    const ctx = canvas.getContext('2d');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    extractedImage = canvas.toDataURL('image/jpeg');
+
+    canvas.toBlob(blob => {
+      status.innerText = "Procesando OCR...";
+
+      Tesseract.recognize(
+        blob,
+        'eng',
+        {
+          logger: m => status.innerText = `OCR: ${Math.round(m.progress * 100)}%`
+        }
+      ).then(({ data: { text } }) => {
+        status.innerText = "Texto detectado:";
+        output.innerText = text;
+
+        const lines = text.toLowerCase().split('\n').map(l => l.trim()).filter(l => l.length > 2);
+
+        extractedEmail = lines.find(line => line.includes('@')) || '';
+        extractedPhone = lines.find(line => /\d{3,}/.test(line) && line.length < 20) || '';
+        extractedName = lines.find(line => line.length > 3 && !line.includes('@') && !/\d/.test(line)) || '';
+
+        const jobKeywords = [
+          'ceo', 'founder', 'co-founder', 'president', 'manager', 'leader', 'director',
+          'affiliate', 'marketing', 'developer', 'engineer', 'executive', 'program',
+          'team', 'head', 'officer', 'consultant', 'cmo', 'cto', 'cfo', 'designer', 'sales'
+        ];
+        extractedJob = lines.find(line => jobKeywords.some(keyword => line.includes(keyword))) || '';
+
+        output.innerText += "\n\n🔎 Datos estructurados:";
+        output.innerText += `\n👤 Nombre: ${extractedName}`;
+        output.innerText += `\n📧 Email: ${extractedEmail}`;
+        output.innerText += `\n📞 Teléfono: ${extractedPhone}`;
+        output.innerText += `\n💼 Cargo: ${extractedJob}`;
+
+        sendBtn.style.display = 'inline-block';
+      });
+    }, 'image/jpeg');
+  }
+
+  function sendToExcel() {
+    status.innerText = "📤 Enviando datos al Excel...";
+
+    const formData = new FormData();
+    formData.append('nombre', extractedName);
+    formData.append('correo', extractedEmail);
+    formData.append('telefono', extractedPhone);
+    formData.append('cargo', extractedJob);
+    formData.append('imagen', extractedImage);
+
+    fetch('https://script.google.com/macros/s/AKfycbx4cXkERc3ZCcw8W_SaYM92J6eekw_2DUuOxAE-849BKbahhxeSqYN6XWc8KM93e5Be/exec', {
+      method: 'POST',
+      body: formData
+    })
+    .then(res => res.ok ? res.text() : Promise.reject("Error al enviar"))
+    .then(msg => {
+      status.innerText = "✅ Datos enviados correctamente.";
+    })
+    .catch(err => {
+      status.innerText = "⚠️ No se pudo enviar: " + err;
+    });
+  }
+
+
+  startCamera();
+</script>
 </body>
 </html>
