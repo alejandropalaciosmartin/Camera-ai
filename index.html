@@ -164,78 +164,107 @@
     }, 'image/jpeg');
   }
 
-  function sendToMonday() {
-    status.innerText = "📤 Enviando datos a Monday...";
+  async function uploadToImgur(base64Image) {
+    const clientId = "23d05a7561069c0"; // Sustituye por el tuyo
+
+    const response = await fetch("https://api.imgur.com/3/image", {
+      method: "POST",
+      headers: {
+        Authorization: `Client-ID ${clientId}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ image: base64Image.split(',')[1], type: "base64" })
+    });
+
+    const data = await response.json();
+    if (data.success) {
+      return data.data.link;
+    } else {
+      throw new Error("Error al subir a Imgur");
+    }
+  }
+
+  async function sendToMonday() {
+    status.innerText = "📤 Subiendo imagen a Imgur...";
 
     const API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjUwMzQxODgzMCwiYWFpIjoxMSwidWlkIjo2NTg4MzExNiwiaWFkIjoiMjAyNS0wNC0yM1QxMDowNTo1Ny4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTI5NjcyMDksInJnbiI6InVzZTEifQ.Tq6pm-53SY27eieHuOrhZCDgEJrCkR7H0t5MA4wbe90";
-    const BOARD_ID = 9154542229; // número
-    const GROUP_ID = "topics"; // o tu grupo
+    const BOARD_ID = 9154542229;
+    const GROUP_ID = "topics";
+    const LINK_COLUMN_ID = "link_mkqz194h"; // ← cambia por el ID real
 
     function cleanEmail(str) {
-    const match = str.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
-    return match ? match[0] : '';
+      const match = str.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+      return match ? match[0] : '';
     }
 
     function cleanPhone(str) {
-    // Extrae solo dígitos, permite "+" al inicio
-    return str.replace(/[^\d+]/g, '');
+      return str.replace(/[^\d+]/g, '');
     }
 
     function cleanText(str) {
-    return str
-        .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ ,.-]/g, '')  // quita símbolos raros
+      return str
+        .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ ,.-]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
     }
 
+    try {
+      const imageUrl = await uploadToImgur(extractedImage);
+      status.innerText = "📤 Enviando datos a Monday...";
 
-    const columnValues = {
+      const columnValues = {
         email_mkqz25xe: {
-            email: cleanEmail(extractedEmail),
-            text: cleanEmail(extractedEmail)
+          email: cleanEmail(extractedEmail),
+          text: cleanEmail(extractedEmail)
         },
         phone_mkqz49z8: cleanPhone(extractedPhone),
         text_mkqzpzbf: cleanText(extractedJob),
-        long_text_mkqz5dxv: cleanText(extractedImage.slice(0, 10000))
-    };
-
-const safeItemName = cleanText(extractedName);
-
-
-    const query = `
-    mutation {
-        create_item (
-        board_id: ${BOARD_ID},
-        group_id: "${GROUP_ID}",
-        item_name: "${safeItemName}",
-        column_values: "${JSON.stringify(columnValues).replace(/"/g, '\\"')}"
-        ) {
-        id
+        [LINK_COLUMN_ID]: {
+          url: imageUrl,
+          text: "Ver tarjeta"
         }
-    }
-    `;
+      };
 
-    fetch("https://api.monday.com/v2", {
+      const safeItemName = cleanText(extractedName);
+      const safeValues = JSON.stringify(columnValues)
+        .replaceAll('\\', '\\\\')
+        .replaceAll('"', '\\"');
+
+      const query = `
+        mutation {
+          create_item (
+            board_id: ${BOARD_ID},
+            group_id: "${GROUP_ID}",
+            item_name: "${safeItemName}",
+            column_values: "${safeValues}"
+          ) {
+            id
+          }
+        }
+      `;
+
+      const response = await fetch("https://api.monday.com/v2", {
         method: "POST",
         headers: {
-        "Content-Type": "application/json",
-        "Authorization": API_KEY
+          "Content-Type": "application/json",
+          "Authorization": API_KEY
         },
         body: JSON.stringify({ query })
-    })
-    .then(res => res.json())
-    .then(data => {
-        console.log("Resultado:", data);
-        if (data.errors) {
-        status.innerText = "⚠️ Error al enviar: " + data.errors[0].message;
-        } else {
+      });
+
+      const result = await response.json();
+      if (result.errors) {
+        status.innerText = "⚠️ Error al enviar a Monday: " + result.errors[0].message;
+      } else {
         status.innerText = "✅ Datos enviados correctamente a Monday.";
-        }
-    })
-    .catch(err => {
-        status.innerText = "⚠️ No se pudo enviar: " + err;
-    });
+      }
+
+    } catch (err) {
+      console.error(err);
+      status.innerText = "⚠️ Falló la subida o el envío: " + err.message;
+    }
   }
+
 
 
 
