@@ -69,7 +69,7 @@
   <button onclick="switchCamera()">🔄 Cambiar Cámara</button>
 </div>
 
-<button id="sendBtn" onclick="sendToExcel()" style="display:none; margin-top:10px;">📤 Enviar datos al Excel</button>
+<button id="sendBtn" onclick="sendToMonday()" style="display:none; margin-top:10px;">📤 Enviar datos a Monday</button>
 
 <p id="status">Esperando cámara...</p>
 <canvas id="canvas"></canvas>
@@ -164,28 +164,79 @@
     }, 'image/jpeg');
   }
 
-  function sendToExcel() {
-    status.innerText = "📤 Enviando datos al Excel...";
+  function sendToMonday() {
+    status.innerText = "📤 Enviando datos a Monday...";
 
-    const formData = new FormData();
-    formData.append('nombre', extractedName);
-    formData.append('correo', extractedEmail);
-    formData.append('telefono', extractedPhone);
-    formData.append('cargo', extractedJob);
-    formData.append('imagen', extractedImage);
+    const API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjUwMzQxODgzMCwiYWFpIjoxMSwidWlkIjo2NTg4MzExNiwiaWFkIjoiMjAyNS0wNC0yM1QxMDowNTo1Ny4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTI5NjcyMDksInJnbiI6InVzZTEifQ.Tq6pm-53SY27eieHuOrhZCDgEJrCkR7H0t5MA4wbe90";
+    const BOARD_ID = 9154542229; // número
+    const GROUP_ID = "topics"; // o tu grupo
 
-    fetch('https://script.google.com/macros/s/AKfycbx4cXkERc3ZCcw8W_SaYM92J6eekw_2DUuOxAE-849BKbahhxeSqYN6XWc8KM93e5Be/exec', {
-      method: 'POST',
-      body: formData
+    function cleanEmail(str) {
+    const match = str.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+    return match ? match[0] : '';
+    }
+
+    function cleanPhone(str) {
+    // Extrae solo dígitos, permite "+" al inicio
+    return str.replace(/[^\d+]/g, '');
+    }
+
+    function cleanText(str) {
+    return str
+        .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ ,.-]/g, '')  // quita símbolos raros
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+
+    const columnValues = {
+        email_mkqz25xe: {
+            email: cleanEmail(extractedEmail),
+            text: cleanEmail(extractedEmail)
+        },
+        phone_mkqz49z8: cleanPhone(extractedPhone),
+        text_mkqzpzbf: cleanText(extractedJob),
+        long_text_mkqz5dxv: cleanText(extractedImage.slice(0, 10000))
+    };
+
+const safeItemName = cleanText(extractedName);
+
+
+    const query = `
+    mutation {
+        create_item (
+        board_id: ${BOARD_ID},
+        group_id: "${GROUP_ID}",
+        item_name: "${safeItemName}",
+        column_values: "${JSON.stringify(columnValues).replace(/"/g, '\\"')}"
+        ) {
+        id
+        }
+    }
+    `;
+
+    fetch("https://api.monday.com/v2", {
+        method: "POST",
+        headers: {
+        "Content-Type": "application/json",
+        "Authorization": API_KEY
+        },
+        body: JSON.stringify({ query })
     })
-    .then(res => res.ok ? res.text() : Promise.reject("Error al enviar"))
-    .then(msg => {
-      status.innerText = "✅ Datos enviados correctamente.";
+    .then(res => res.json())
+    .then(data => {
+        console.log("Resultado:", data);
+        if (data.errors) {
+        status.innerText = "⚠️ Error al enviar: " + data.errors[0].message;
+        } else {
+        status.innerText = "✅ Datos enviados correctamente a Monday.";
+        }
     })
     .catch(err => {
-      status.innerText = "⚠️ No se pudo enviar: " + err;
+        status.innerText = "⚠️ No se pudo enviar: " + err;
     });
   }
+
 
 
   startCamera();
