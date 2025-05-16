@@ -2,43 +2,50 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Escáner de Tarjetas</title>
+  <title>Blue Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="logo.png">
   <meta name="theme-color" content="#007bff">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Escáner de Tarjetas">
+  <meta name="apple-mobile-web-app-title" content="Blue Scanner">
   <link rel="apple-touch-icon" href="logo.png">
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
+    html, body {
       margin: 0;
-      background: #f5f5f5;
+      padding: 0;
+      height: 100%;
+      background-color: black;
+      color: white;
+      overflow: hidden;
     }
-    h2 {
-      padding: 15px;
+    #cameraView, #resultView {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
     }
+    #resultView { display: none; background-color: #fff; color: #000; padding: 20px; overflow-y: auto; }
     video {
       width: 100%;
-      max-width: 640px;
-      height: auto;
-      aspect-ratio: 16/9;
+      height: 100%;
       object-fit: cover;
-      border: 2px solid #ccc;
-      border-radius: 10px;
     }
-    .buttons {
+    .btn-bar {
+      position: absolute;
+      bottom: 20px;
+      width: 100%;
       display: flex;
-      justify-content: center;
-      gap: 20px;
-      margin: 20px 0;
+      justify-content: space-around;
+      align-items: center;
     }
     button {
       font-size: 18px;
-      padding: 15px 25px;
+      padding: 12px 18px;
       border: none;
       border-radius: 10px;
       background-color: #007bff;
@@ -48,234 +55,218 @@
     button:hover {
       background-color: #0056b3;
     }
-    #status {
-      margin-top: 10px;
-      font-weight: bold;
-    }
-    canvas {
-      display: none;
-    }
-    pre {
-      text-align: left;
-      max-width: 600px;
-      margin: 20px auto;
-      background: #eee;
-      padding: 10px;
-      white-space: pre-wrap;
-      border-radius: 10px;
+    canvas { display: none; }
+    pre { max-width: 90%; white-space: pre-wrap; text-align: left; margin-bottom: 20px; }
+    #orientationLabel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: rgba(0, 0, 0, 0.6);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
-  <h2>Escanea una tarjeta de visita</h2>
-  <video id="video" autoplay playsinline></video>
+  <div id="cameraView">
+    <video id="video" autoplay playsinline></video>
+    <div id="orientationLabel">Modo: Vertical</div>
+    <div class="btn-bar">
+      <button onclick="captureImage()">📸 Capturar</button>
+      <button onclick="switchOrientation()">🌐 Cambiar Orientación</button>
+    </div>
+  </div>
 
-  <!-- Botón nuevo para enviar datos -->
-<div class="buttons">
-  <button onclick="captureImage()">📸 Tomar Foto</button>
-  <button onclick="switchCamera()">🔄 Cambiar Cámara</button>
-</div>
+  <div id="resultView">
+    <img id="capturedImg" src="" style="width: 100%; max-width: 400px; margin-bottom: 20px;" />
+    <pre id="output"></pre>
+    <div class="btn-bar">
+      <button onclick="sendToMonday()">📤 Enviar a Monday</button>
+      <button onclick="restartScanner()">↺ Repetir Foto</button>
+    </div>
+  </div>
 
-<button id="sendBtn" onclick="sendToMonday()" style="display:none; margin-top:10px;">📤 Enviar datos a Monday</button>
+  <canvas id="canvas"></canvas>
 
-<p id="status">Esperando cámara...</p>
-<canvas id="canvas"></canvas>
-<pre id="output"></pre>
+  <script>
+    let currentStream = null;
+    let verticalMode = true;
+    let extractedName = '', extractedEmail = '', extractedPhone = '', extractedJob = '', extractedImage = '';
 
-<script>
-  let currentStream = null;
-  let currentFacingMode = 'environment';
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const output = document.getElementById('output');
+    const cameraView = document.getElementById('cameraView');
+    const resultView = document.getElementById('resultView');
+    const capturedImg = document.getElementById('capturedImg');
+    const orientationLabel = document.getElementById('orientationLabel');
 
-  let extractedName = '';
-  let extractedEmail = '';
-  let extractedPhone = '';
-  let extractedJob = '';
-  let extractedImage = '';
+    async function startCamera() {
+      if (currentStream) currentStream.getTracks().forEach(track => track.stop());
 
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const status = document.getElementById('status');
-  const output = document.getElementById('output');
-  const sendBtn = document.getElementById('sendBtn');
-
-  async function startCamera() {
-    if (currentStream) currentStream.getTracks().forEach(track => track.stop());
-
-    const constraints = {
-      video: {
-        facingMode: { exact: currentFacingMode },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        advanced: [{ focusMode: 'continuous' }]
-      }
-    };
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      currentStream = stream;
-      video.srcObject = stream;
-    } catch (err) {
-      status.innerText = "Error al acceder a la cámara: " + err;
-    }
-  }
-
-  function switchCamera() {
-    currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-    startCamera();
-  }
-
-  async function captureImage() {
-    status.innerText = "Procesando captura...";
-
-    const ctx = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    extractedImage = canvas.toDataURL('image/jpeg');
-
-    canvas.toBlob(blob => {
-      status.innerText = "Procesando OCR...";
-
-      Tesseract.recognize(
-        blob,
-        'eng',
-        {
-          logger: m => status.innerText = `OCR: ${Math.round(m.progress * 100)}%`
-        }
-      ).then(({ data: { text } }) => {
-        status.innerText = "Texto detectado:";
-        output.innerText = text;
-
-        const lines = text.toLowerCase().split('\n').map(l => l.trim()).filter(l => l.length > 2);
-
-        extractedEmail = lines.find(line => line.includes('@')) || '';
-        extractedPhone = lines.find(line => /\d{3,}/.test(line) && line.length < 20) || '';
-        extractedName = lines.find(line => line.length > 3 && !line.includes('@') && !/\d/.test(line)) || '';
-
-        const jobKeywords = [
-          'ceo', 'founder', 'co-founder', 'president', 'manager', 'leader', 'director',
-          'affiliate', 'marketing', 'developer', 'engineer', 'executive', 'program',
-          'team', 'head', 'officer', 'consultant', 'cmo', 'cto', 'cfo', 'designer', 'sales'
-        ];
-        extractedJob = lines.find(line => jobKeywords.some(keyword => line.includes(keyword))) || '';
-
-        output.innerText += "\n\n🔎 Datos estructurados:";
-        output.innerText += `\n👤 Nombre: ${extractedName}`;
-        output.innerText += `\n📧 Email: ${extractedEmail}`;
-        output.innerText += `\n📞 Teléfono: ${extractedPhone}`;
-        output.innerText += `\n💼 Cargo: ${extractedJob}`;
-
-        sendBtn.style.display = 'inline-block';
-      });
-    }, 'image/jpeg');
-  }
-
-  async function uploadToImgur(base64Image) {
-    const clientId = "23d05a7561069c0"; // Sustituye por el tuyo
-
-    const response = await fetch("https://api.imgur.com/3/image", {
-      method: "POST",
-      headers: {
-        Authorization: `Client-ID ${clientId}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ image: base64Image.split(',')[1], type: "base64" })
-    });
-
-    const data = await response.json();
-    if (data.success) {
-      return data.data.link;
-    } else {
-      throw new Error("Error al subir a Imgur");
-    }
-  }
-
-  async function sendToMonday() {
-    status.innerText = "📤 Subiendo imagen a Imgur...";
-
-    const API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjUwMzQxODgzMCwiYWFpIjoxMSwidWlkIjo2NTg4MzExNiwiaWFkIjoiMjAyNS0wNC0yM1QxMDowNTo1Ny4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTI5NjcyMDksInJnbiI6InVzZTEifQ.Tq6pm-53SY27eieHuOrhZCDgEJrCkR7H0t5MA4wbe90";
-    const BOARD_ID = 9154542229;
-    const GROUP_ID = "topics";
-    const LINK_COLUMN_ID = "link_mkqz194h"; // ← cambia por el ID real
-
-    function cleanEmail(str) {
-      const match = str.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
-      return match ? match[0] : '';
-    }
-
-    function cleanPhone(str) {
-      return str.replace(/[^\d+]/g, '');
-    }
-
-    function cleanText(str) {
-      return str
-        .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ ,.-]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-
-    try {
-      const imageUrl = await uploadToImgur(extractedImage);
-      status.innerText = "📤 Enviando datos a Monday...";
-
-      const columnValues = {
-        email_mkqz25xe: {
-          email: cleanEmail(extractedEmail),
-          text: cleanEmail(extractedEmail)
-        },
-        phone_mkqz49z8: cleanPhone(extractedPhone),
-        text_mkqzpzbf: cleanText(extractedJob),
-        [LINK_COLUMN_ID]: {
-          url: imageUrl,
-          text: "Ver tarjeta"
+      const constraints = {
+        video: {
+          facingMode: 'environment',
+          width: { ideal: verticalMode ? 720 : 1280 },
+          height: { ideal: verticalMode ? 1280 : 720 }
         }
       };
 
-      const safeItemName = cleanText(extractedName);
-      const safeValues = JSON.stringify(columnValues)
-        .replaceAll('\\', '\\\\')
-        .replaceAll('"', '\\"');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        currentStream = stream;
+        video.srcObject = stream;
+        orientationLabel.textContent = verticalMode ? "Modo: Vertical" : "Modo: Horizontal";
+      } catch (err) {
+        alert("Error al acceder a la cámara: " + err);
+      }
+    }
 
-      const query = `
-        mutation {
-          create_item (
-            board_id: ${BOARD_ID},
-            group_id: "${GROUP_ID}",
-            item_name: "${safeItemName}",
-            column_values: "${safeValues}"
-          ) {
-            id
-          }
-        }
-      `;
+    function switchOrientation() {
+      verticalMode = !verticalMode;
+      startCamera();
+    }
 
-      const response = await fetch("https://api.monday.com/v2", {
+    async function captureImage() {
+      const ctx = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      extractedImage = canvas.toDataURL('image/jpeg');
+      capturedImg.src = extractedImage;
+
+      cameraView.style.display = 'none';
+      resultView.style.display = 'flex';
+      output.innerText = 'Procesando OCR...';
+
+      canvas.toBlob(blob => {
+        Tesseract.recognize(blob, 'eng', {
+          logger: m => output.innerText = `OCR: ${Math.round(m.progress * 100)}%`
+        }).then(({ data: { text } }) => {
+          const lines = text.toLowerCase().split('\n').map(l => l.trim()).filter(l => l.length > 2);
+
+          extractedEmail = lines.find(line => line.includes('@')) || '';
+          extractedPhone = lines.find(line => /\d{3,}/.test(line) && line.length < 20) || '';
+          extractedName = lines.find(line => line.length > 3 && !line.includes('@') && !/\d/.test(line)) || '';
+
+          const jobKeywords = ["ceo", "founder", "co-founder", "president", "manager", "leader", "director", "affiliate", "marketing", "developer", "engineer", "executive", "program", "team", "head", "officer", "consultant", "cmo", "cto", "cfo", "designer", "sales"];
+          extractedJob = lines.find(line => jobKeywords.some(keyword => line.includes(keyword))) || '';
+
+          output.innerText = `\n\ud83d\udc64 Nombre: ${extractedName}\n\ud83d\udce7 Email: ${extractedEmail}\n\ud83d\udcf1 Teléfono: ${extractedPhone}\n\ud83d\udcbc Cargo: ${extractedJob}`;
+        });
+      }, 'image/jpeg');
+    }
+
+    function restartScanner() {
+      resultView.style.display = 'none';
+      cameraView.style.display = 'flex';
+      startCamera();
+    }
+
+    async function uploadToImgur(base64Image) {
+      const clientId = "23d05a7561069c0"; // Sustituye por el tuyo
+
+      const response = await fetch("https://api.imgur.com/3/image", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "Authorization": API_KEY
+          Authorization: `Client-ID ${clientId}`,
+          "Content-Type": "application/json"
         },
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ image: base64Image.split(',')[1], type: "base64" })
       });
 
-      const result = await response.json();
-      if (result.errors) {
-        status.innerText = "⚠️ Error al enviar a Monday: " + result.errors[0].message;
+      const data = await response.json();
+      if (data.success) {
+        return data.data.link;
       } else {
-        status.innerText = "✅ Datos enviados correctamente a Monday.";
+        throw new Error("Error al subir a Imgur");
+      }
+    }
+
+    async function sendToMonday() {
+      status.innerText = "📤 Subiendo imagen a Imgur...";
+
+      const API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjUwMzQxODgzMCwiYWFpIjoxMSwidWlkIjo2NTg4MzExNiwiaWFkIjoiMjAyNS0wNC0yM1QxMDowNTo1Ny4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTI5NjcyMDksInJnbiI6InVzZTEifQ.Tq6pm-53SY27eieHuOrhZCDgEJrCkR7H0t5MA4wbe90";
+      const BOARD_ID = 9154542229;
+      const GROUP_ID = "topics";
+      const LINK_COLUMN_ID = "link_mkqz194h"; // ← cambia por el ID real
+
+      function cleanEmail(str) {
+        const match = str.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+        return match ? match[0] : '';
       }
 
-    } catch (err) {
-      console.error(err);
-      status.innerText = "⚠️ Falló la subida o el envío: " + err.message;
+      function cleanPhone(str) {
+        return str.replace(/[^\d+]/g, '');
+      }
+
+      function cleanText(str) {
+        return str
+          .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ ,.-]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      try {
+        const imageUrl = await uploadToImgur(extractedImage);
+        status.innerText = "📤 Enviando datos a Monday...";
+
+        const columnValues = {
+          email_mkqz25xe: {
+            email: cleanEmail(extractedEmail),
+            text: cleanEmail(extractedEmail)
+          },
+          phone_mkqz49z8: cleanPhone(extractedPhone),
+          text_mkqzpzbf: cleanText(extractedJob),
+          [LINK_COLUMN_ID]: {
+            url: imageUrl,
+            text: "Ver tarjeta"
+          }
+        };
+
+        const safeItemName = cleanText(extractedName);
+        const safeValues = JSON.stringify(columnValues)
+          .replaceAll('\\', '\\\\')
+          .replaceAll('"', '\\"');
+
+        const query = `
+          mutation {
+            create_item (
+              board_id: ${BOARD_ID},
+              group_id: "${GROUP_ID}",
+              item_name: "${safeItemName}",
+              column_values: "${safeValues}"
+            ) {
+              id
+            }
+          }
+        `;
+
+        const response = await fetch("https://api.monday.com/v2", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": API_KEY
+          },
+          body: JSON.stringify({ query })
+        });
+
+        const result = await response.json();
+        if (result.errors) {
+          status.innerText = "⚠️ Error al enviar a Monday: " + result.errors[0].message;
+        } else {
+          status.innerText = "✅ Datos enviados correctamente a Monday.";
+        }
+
+      } catch (err) {
+        console.error(err);
+        status.innerText = "⚠️ Falló la subida o el envío: " + err.message;
+      }
     }
-  }
 
-
-
-
-  startCamera();
-</script>
+    startCamera();
+  </script>
 </body>
 </html>
