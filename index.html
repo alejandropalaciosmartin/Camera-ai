@@ -43,6 +43,14 @@
       justify-content: space-around;
       align-items: center;
     }
+    .circle-button {
+      width: 70px;
+      height: 70px;
+      background-color: white;
+      border-radius: 50%;
+      border: 4px solid #007bff;
+      cursor: pointer;
+    }
     button {
       font-size: 18px;
       padding: 12px 18px;
@@ -66,6 +74,11 @@
       border-radius: 8px;
       font-size: 14px;
     }
+    #status {
+      text-align: center;
+      margin-bottom: 20px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -73,7 +86,7 @@
     <video id="video" autoplay playsinline></video>
     <div id="orientationLabel">Modo: Vertical</div>
     <div class="btn-bar">
-      <button onclick="captureImage()">📸 Capturar</button>
+      <div class="circle-button" onclick="captureImage()"></div>
       <button onclick="switchOrientation()">🌐 Cambiar Orientación</button>
     </div>
   </div>
@@ -81,6 +94,7 @@
   <div id="resultView">
     <img id="capturedImg" src="" style="width: 100%; max-width: 400px; margin-bottom: 20px;" />
     <pre id="output"></pre>
+    <div id="status"></div>
     <div class="btn-bar">
       <button onclick="sendToMonday()">📤 Enviar a Monday</button>
       <button onclick="restartScanner()">↺ Repetir Foto</button>
@@ -101,6 +115,7 @@
     const resultView = document.getElementById('resultView');
     const capturedImg = document.getElementById('capturedImg');
     const orientationLabel = document.getElementById('orientationLabel');
+    const status = document.getElementById('status');
 
     async function startCamera() {
       if (currentStream) currentStream.getTracks().forEach(track => track.stop());
@@ -130,9 +145,21 @@
 
     async function captureImage() {
       const ctx = canvas.getContext('2d');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+
+      if (verticalMode) {
+        const size = Math.min(videoWidth, videoHeight);
+        canvas.width = size;
+        canvas.height = size;
+        const offsetX = (videoWidth - size) / 2;
+        const offsetY = (videoHeight - size) / 2;
+        ctx.drawImage(video, offsetX, offsetY, size, size, 0, 0, size, size);
+      } else {
+        canvas.width = videoWidth;
+        canvas.height = videoHeight;
+        ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+      }
 
       extractedImage = canvas.toDataURL('image/jpeg');
       capturedImg.src = extractedImage;
@@ -154,7 +181,7 @@
           const jobKeywords = ["ceo", "founder", "co-founder", "president", "manager", "leader", "director", "affiliate", "marketing", "developer", "engineer", "executive", "program", "team", "head", "officer", "consultant", "cmo", "cto", "cfo", "designer", "sales"];
           extractedJob = lines.find(line => jobKeywords.some(keyword => line.includes(keyword))) || '';
 
-          output.innerText = `\n\ud83d\udc64 Nombre: ${extractedName}\n\ud83d\udce7 Email: ${extractedEmail}\n\ud83d\udcf1 Teléfono: ${extractedPhone}\n\ud83d\udcbc Cargo: ${extractedJob}`;
+          output.innerText = `\n👤 Nombre: ${extractedName}\n📧 Email: ${extractedEmail}\n📱 Teléfono: ${extractedPhone}\n💼 Cargo: ${extractedJob}`;
         });
       }, 'image/jpeg');
     }
@@ -191,7 +218,7 @@
       const API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjUwMzQxODgzMCwiYWFpIjoxMSwidWlkIjo2NTg4MzExNiwiaWFkIjoiMjAyNS0wNC0yM1QxMDowNTo1Ny4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTI5NjcyMDksInJnbiI6InVzZTEifQ.Tq6pm-53SY27eieHuOrhZCDgEJrCkR7H0t5MA4wbe90";
       const BOARD_ID = 9154542229;
       const GROUP_ID = "topics";
-      const LINK_COLUMN_ID = "link_mkqz194h"; // ← cambia por el ID real
+      const LINK_COLUMN_ID = "link_mkqz194h";
 
       function cleanEmail(str) {
         const match = str.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
@@ -203,10 +230,7 @@
       }
 
       function cleanText(str) {
-        return str
-          .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ ,.-]/g, '')
-          .replace(/\s+/g, ' ')
-          .trim();
+        return str.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ ,.-]/g, '').replace(/\s+/g, ' ').trim();
       }
 
       try {
